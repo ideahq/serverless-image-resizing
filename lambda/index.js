@@ -263,7 +263,7 @@ const ResizeAndCopy = function (path, context, callback, stage) {
       }).promise()
       .then(function() {
         if (stage !== 'prod') {
-          logger.log('info', 'Setting object ACL - dev only - not required when used with CloudFormation!');
+          logger.log('info', 'Setting object ACL - dev only - not required when used with CloudFront!');
 
           return S3.putObjectAcl({
             Bucket: DST_BUCKET,
