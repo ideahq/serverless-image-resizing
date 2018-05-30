@@ -380,25 +380,24 @@ var Copy = function (event, context, callback, stage) {
 
 exports.handler = (event, context, callback) => {
   let path = event.queryStringParameters.key;
-  let stage = event.queryStringParameters.stage;
+  let stage = event.requestContext.stage;
 
   if (path[0] === '/') {
     path = path.substr(1);
   }
 
-  logger.log('info', 'event.stage', stage);
-  logger.log('info', 'event.stage 2', event.stage);
-  logger.log('info', 'event.path', event.path);
+  logger.log('info', 'context.version', context.functionVersion);
+  logger.log('info', 'stage', stage);
   logger.log('info', 'path', path);
-  logger.log('info', 'event', event);
+  //logger.log('info', 'event json', JSON.stringify(event, null, 2));
 
   if (path.substr(0, 13) === 'images/cache/') {
-    logger.log('info', 'Image resize and copy');
+    logger.log('info', 'calling ResizeAndCopy');
     return ResizeAndCopy(path, context, callback, stage)
   } else {
     // TODO this doesn't seem to be in play yet?
     // TODO not supported on dev yet! See double S3 copy in ResizeAndCopy!
-    logger.log('info', 'File copy / direct_file_link');
+    logger.log('info', 'calling Copy');
     return Copy(event, context, callback, stage)
   }
 };
