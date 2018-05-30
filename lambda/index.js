@@ -412,6 +412,7 @@ var Copy = function (path, context, callback, stage) {
             S3.putObject({
                 Body: getData.Body,
                 Bucket: SRC_BUCKET,
+                ContentType: getCorrectMimeType(dstKey, getData.ContentType),
                 Key: srcKey
             }, function(err, data) {
               if (err) {
