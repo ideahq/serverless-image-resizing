@@ -332,8 +332,7 @@ const ResizeAndCopy = function (path, context, callback, stage) {
 // - read the original file from the src S3 bucket with "images/" prefix stripped,
 // - store it in the destination S3 bucket with the
 // - redirect the client to look for the file at original request URL
-var Copy = function (event, context, callback, stage) {
-  const path = event.queryStringParameters.key;
+var Copy = function (path, context, callback, stage) {
   var pieces = path.toString().split('/');
 
   // Valid paths will look something like
@@ -361,21 +360,79 @@ var Copy = function (event, context, callback, stage) {
   logger.log('info', 'Copying. arn:aws:s3:::%s/%s ==> arn:aws:s3:::%s/%s', SRC_BUCKET, srcKey, DST_BUCKET, dstKey);
   logger.log('info', 'Saving then redirecting to', `${URL}/${dstKey}`);
 
-  S3.getObject({ Bucket: SRC_BUCKET, Key: srcKey }).promise()
-    .then(data => S3.putObject({
-      Body: data.Body,
-      Bucket: DST_BUCKET,
-      ContentType: getCorrectMimeType(dstKey, data.ContentType),
-      Key: dstKey
-    }).promise()
-    )
-    .then(() => callback(null, {
-      statusCode: 301,
-      headers: { 'Location': `${URL}/${dstKey}` },
-      body: null,
-    })
-    )
+  const saveFile = function(data) {
+    S3.putObject({
+        Body: data.Body,
+        Bucket: DST_BUCKET,
+        ContentType: getCorrectMimeType(dstKey, data.ContentType),
+        CacheControl: "public, max-age=2592000",
+        Key: dstKey
+      }).promise()
+      .then(function() {
+        if (stage !== 'prod') {
+          logger.log('info', 'Setting object ACL - dev only - not required when used with CloudFront!');
+
+          return S3.putObjectAcl({
+            Bucket: DST_BUCKET,
+            Key: dstKey,
+            ACL: 'public-read'
+          }).promise();
+        }
+
+        logger.log('info', 'Returning empty promise. ;-(');
+
+        return Promise.resolve();
+      })
+      .then(() => callback(null, {
+        statusCode: 301,
+        headers: { 'Location': `${URL}${dstKey}` },
+        body: null,
+      })
+      )
     .catch(err => callback(err));
+  };
+
+  S3.getObject({ Bucket: SRC_BUCKET, Key: srcKey }, function(err, data) {
+      if (err) {
+        logger.log('warn', "%s --- %j", err, err.stack);
+
+        if (stage !== 'prod') {
+          logger.log('info', 'Trying to get from orig src bucket %s with key %s', ORIG_SRC_BUCKET, srcKey);
+          // we assume here that the object doesn't exist and we try to get it from the original bucket (production)
+          S3.getObject({ Bucket: ORIG_SRC_BUCKET, Key: srcKey }, function(err, getData) {
+            if (err) {
+              logger.log('error', 'Failed to get from orig src bucket', err);
+
+              callback(err);
+              return err;
+            }
+
+            logger.log('info', 'successfully retrieved data from orig src bucket');
+
+            S3.putObject({
+                Body: getData.Body,
+                Bucket: SRC_BUCKET,
+                Key: srcKey
+            }, function(err, data) {
+              if (err) {
+                logger.log('error', 'Failed to save to src bucket', err);
+              } else {
+                  logger.log('info', 'Stored image in src bucket');
+
+                  saveFile(getData);
+              }
+            });
+          });
+        } else {
+          logger.log('warn', 'Object not found.');
+          callback('Object not found.');
+        }
+      } else {
+        logger.log('info', 'Found image in src bucket');
+
+        saveFile(data);
+      }
+  });
 };
 
 exports.handler = (event, context, callback) => {
@@ -395,9 +452,8 @@ exports.handler = (event, context, callback) => {
     logger.log('info', 'calling ResizeAndCopy');
     return ResizeAndCopy(path, context, callback, stage)
   } else {
-    // TODO this doesn't seem to be in play yet?
     // TODO not supported on dev yet! See double S3 copy in ResizeAndCopy!
     logger.log('info', 'calling Copy');
-    return Copy(event, context, callback, stage)
+    return Copy(path, context, callback, stage)
   }
 };
