@@ -13,11 +13,9 @@ const SRC_BUCKET = process.env.SRC_BUCKET;
 const ORIG_SRC_BUCKET = process.env.ORIG_SRC_BUCKET;
 const DST_BUCKET = process.env.DST_BUCKET;
 const URL = process.env.URL;
-const STAGE = process.env.stage;
 const VERSION = process.env.AWS_LAMBDA_FUNCTION_VERSION;
 
 logger.log('info', 'process.env', process.env);
-logger.log('info', 'STAGE', STAGE);
 logger.log('info', 'VERSION', VERSION);
 logger.log('info', 'Redirect URL', URL);
 logger.log('info', 'SRC_BUCKET', SRC_BUCKET);
@@ -203,7 +201,7 @@ var getCorrectMimeType = function (filename, mimeType) {
   return newMimeType;
 }
 
-const ResizeAndCopy = function (path, context, callback) {
+const ResizeAndCopy = function (path, context, callback, stage) {
   logger.log('info', 'filterSet', filterSet);
 
   const pieces = path.toString().split('/');
@@ -264,7 +262,7 @@ const ResizeAndCopy = function (path, context, callback) {
         Key: dstKey
       }).promise()
       .then(function() {
-        if (STAGE !== 'prod') {
+        if (stage !== 'prod') {
           logger.log('info', 'Setting object ACL - dev only - not required when used with CloudFormation!');
 
           return S3.putObjectAcl({
@@ -292,7 +290,7 @@ const ResizeAndCopy = function (path, context, callback) {
       if (err) {
         logger.log('warn', "%s --- %j", err, err.stack);
 
-        if (STAGE !== 'prod') {
+        if (stage !== 'prod') {
           logger.log('info', 'Trying to get from orig src bucket %s with key %s', ORIG_SRC_BUCKET, srcKey);
           // we assume here that the object doesn't exist and we try to get it from the original bucket (production)
           S3.getObject({ Bucket: ORIG_SRC_BUCKET, Key: srcKey }, function(err, getData) {
@@ -334,7 +332,7 @@ const ResizeAndCopy = function (path, context, callback) {
 // - read the original file from the src S3 bucket with "images/" prefix stripped,
 // - store it in the destination S3 bucket with the
 // - redirect the client to look for the file at original request URL
-var Copy = function (event, context, callback) {
+var Copy = function (event, context, callback, stage) {
   const path = event.queryStringParameters.key;
   var pieces = path.toString().split('/');
 
@@ -382,22 +380,23 @@ var Copy = function (event, context, callback) {
 
 exports.handler = (event, context, callback) => {
   let path = event.queryStringParameters.key;
+  const stage = event.stage;
 
   if (path[0] === '/') {
     path = path.substr(1);
   }
 
+  logger.log('info', 'event.stage', stage);
   logger.log('info', 'path', path);
   logger.log('info', 'event', event);
-  logger.log('info', 'event', context);
 
   if (path.substr(0, 13) === 'images/cache/') {
     logger.log('info', 'Image resize and copy');
-    return ResizeAndCopy(path, context, callback)
+    return ResizeAndCopy(path, context, callback, stage)
   } else {
     // TODO this doesn't seem to be in play yet?
     // TODO not supported on dev yet! See double S3 copy in ResizeAndCopy!
     logger.log('info', 'File copy / direct_file_link');
-    return Copy(event, context, callback)
+    return Copy(event, context, callback, stage)
   }
 };
