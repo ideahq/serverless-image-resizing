@@ -380,7 +380,7 @@ var Copy = function (event, context, callback, stage) {
 
 exports.handler = (event, context, callback) => {
   let path = event.queryStringParameters.key;
-  const stage = event.stage;
+  const stage = event.queryStringParameters.stage;
 
   if (path[0] === '/') {
     path = path.substr(1);
