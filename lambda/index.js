@@ -14,9 +14,11 @@ const ORIG_SRC_BUCKET = process.env.ORIG_SRC_BUCKET;
 const DST_BUCKET = process.env.DST_BUCKET;
 const URL = process.env.URL;
 const STAGE = process.env.stage;
+const VERSION = process.env.AWS_LAMBDA_FUNCTION_VERSION;
 
 logger.log('info', 'process.env', process.env);
 logger.log('info', 'STAGE', STAGE);
+logger.log('info', 'VERSION', VERSION);
 logger.log('info', 'Redirect URL', URL);
 logger.log('info', 'SRC_BUCKET', SRC_BUCKET);
 logger.log('info', 'ORIG_SRC_BUCKET', ORIG_SRC_BUCKET);
@@ -386,6 +388,8 @@ exports.handler = (event, context, callback) => {
   }
 
   logger.log('info', 'path', path);
+  logger.log('info', 'event', event);
+  logger.log('info', 'event', context);
 
   if (path.substr(0, 13) === 'images/cache/') {
     logger.log('info', 'Image resize and copy');
