@@ -358,7 +358,7 @@ var Copy = function (path, context, callback, stage) {
   const dstKey = path.split('?')[0];
 
   logger.log('info', 'Copying. arn:aws:s3:::%s/%s ==> arn:aws:s3:::%s/%s', SRC_BUCKET, srcKey, DST_BUCKET, dstKey);
-  logger.log('info', 'Saving then redirecting to', `${URL}/${dstKey}`);
+  logger.log('info', 'Saving then redirecting to', `${URL}${dstKey}`);
 
   const saveFile = function(data) {
     S3.putObject({
@@ -385,7 +385,7 @@ var Copy = function (path, context, callback, stage) {
       })
       .then(() => callback(null, {
         statusCode: 301,
-        headers: { 'Location': `${URL}${dstKey}` },
+        headers: { 'Location': `${URL}${dstKey}?new` },
         body: null,
       })
       )
