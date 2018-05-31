@@ -44,113 +44,137 @@ var Resize = function (imgData, filterSet) {
   var outputOptions = {};
   var upscale = false;
   var upscaleX, upscaleY;
-  var img = Sharp(imgData);
+  var img = Sharp(imgData)
+  
+  return img.metadata().then(function(metadata) {
+    // The conversion from YAML to JSON loses ordering of filters
+    // so we'll make some assumptions about sequence.
 
-  // The conversion from YAML to JSON loses ordering of filters
-  // so we'll make some assumptions about sequence.
+    // upscale
+    // Preserving aspect ratio, resize the image to be as small as possible
+    // while ensuring its dimensions are greater than or equal to the
+    // width and height specified
+    if (filters.hasOwnProperty('upscale')) {
 
-  // upscale
-  // Preserving aspect ratio, resize the image to be as small as possible
-  // while ensuring its dimensions are greater than or equal to the
-  // width and height specified
-  if (filters.hasOwnProperty('upscale')) {
+      var u = filters.upscale;
 
-    var u = filters.upscale;
-
-    // Note: in Sharp, multiple resizsings can't be done as discrete
-    // operations without creating multiple buffers, so instead we flag here
-    // whether upscaling should be done as part of thumbnail creation later
-    if (u.hasOwnProperty('min') &&
-      Array.isArray(u.min) &&
-      u.min.length == 2) {
-      upscale = true;
-      upscaleX = u.min[0];
-      upscaleY = u.min[1];
-      // console.log("Upscale to " + u.min[0] + " x " + u.min[1])
-    }
-  }
-
-  // thumbnail
-  // 'inset' mode : fit within dimensions, preserving aspect ratio
-  //
-  // 'outbound' mode : resize the image to be as small as possible
-  // while ensuring its dimensions are greater than or equal to
-  // specified dimensions, then crop (center focused) to exact dimensions.
-  if (filters.hasOwnProperty('thumbnail')) {
-
-    var f = filters.thumbnail;
-    var enlarge = false;
-
-    if (f.hasOwnProperty('size') &&
-      f.hasOwnProperty('mode') &&
-      Array.isArray(f.size) &&
-      f.size.length == 2) {
-
-      // decide if we actually need to upscale
-      if (upscale && (upscaleX >= f.size[0] || upscaleY >= f.size[1])) {
-        enlarge = true;
+      // Note: in Sharp, multiple resizsings can't be done as discrete
+      // operations without creating multiple buffers, so instead we flag here
+      // whether upscaling should be done as part of thumbnail creation later
+      if (u.hasOwnProperty('min') &&
+        Array.isArray(u.min) &&
+        u.min.length == 2) {
+        upscale = true;
+        upscaleX = u.min[0];
+        upscaleY = u.min[1];
+        // console.log("Upscale to " + u.min[0] + " x " + u.min[1])
       }
+    }
 
+    // thumbnail
+    // 'inset' mode : fit within dimensions, preserving aspect ratio
+    //
+    // 'outbound' mode : resize the image to be as small as possible
+    // while ensuring its dimensions are greater than or equal to
+    // specified dimensions, then crop (center focused) to exact dimensions.
+    if (filters.hasOwnProperty('thumbnail')) {
+
+      var f = filters.thumbnail;
+      var enlarge = false;
+
+      if (f.hasOwnProperty('size') &&
+        f.hasOwnProperty('mode') &&
+        Array.isArray(f.size) &&
+        f.size.length == 2) {
+
+        // decide if we actually need to upscale
+        if (upscale && (upscaleX >= f.size[0] || upscaleY >= f.size[1])) {
+          enlarge = true;
+        }
+
+        var resizeWidth = f.size[0];
+        var resizeHeight = f.size[1];
+        if (f.size[0] > metadata.width && f.size[1] < metadata.height) {
+          // width is smaller than the min width
+          resizeWidth = metadata.width;
+        } else if (f.size[0] < metadata.width && f.size[1] > metadata.height) {
+          // height is smaller than the min height
+          resizeHeight = metadata.height;          
+        } else if (f.size[0] > metadata.width && f.size[1] > metadata.height) {
+          // height and width is smaller than the min height and width
+
+          // use the larger size between heigh and width
+          var size = metadata.width;
+          if (metadata.height > metadata.width) {
+            size = metadata.height;
+          }
+
+          resizeWidth = size;
+          resizeHeight = size;          
+        }
+
+        img = img.resize(resizeWidth, resizeHeight);
+
+        if (!enlarge) {
+          img = img.withoutEnlargement();
+        }
+
+        if (f.mode === "inset") {
+          img = img.max();
+        }
+
+        // console.log("Thumbnail to " + f.size[0] + " x " + f.size[1] + " (" + f.mode + ")");
+      }
+    }
+
+    // relative_resize
+    //
+    // scale the image to the width specified, maintaining aspect
+    // ratio for the height.
+    if (filters.hasOwnProperty('relative_resize')) {
       img = img.resize(f.size[0], f.size[1]);
 
-      if (!enlarge) {
-        img = img.withoutEnlargement();
-      }
+      var r = filters.relative_resize;
 
-      if (f.mode === "inset") {
-        img = img.max();
+      if (r.hasOwnProperty('widen')) {
+        img = img.resize(r.widen, null).withoutEnlargement();
+        // console.log("Widening to " + r.widen);
       }
-
-      // console.log("Thumbnail to " + f.size[0] + " x " + f.size[1] + " (" + f.mode + ")");
     }
-  }
 
-  // relative_resize
-  //
-  // scale the image to the width specified, maintaining aspect
-  // ratio for the height.
-  if (filters.hasOwnProperty('relative_resize')) {
-
-    var r = filters.relative_resize;
-
-    if (r.hasOwnProperty('widen')) {
-      img = img.resize(r.widen, null).withoutEnlargement();
-      // console.log("Widening to " + r.widen);
+    // jpegs may have optional quality setting
+    if (filterSet.hasOwnProperty('quality')) {
+      jpegOptions = { quality: filterSet.Quality };
     }
-  }
-
-  // jpegs may have optional quality setting
-  if (filterSet.hasOwnProperty('quality') && filterSet.Quality) {
-    jpegOptions = { quality: filterSet.Quality };
-  }
 
 
-  return img.metadata()
-    .then(metadata => {
-      if(metadata.format === 'gif') {
-        // GIF is not a Sharp supported output format, so
-        // we have to kinda cheat. Set the output format and the mimeType
-        // to PNG, but keep the actual filename with the GIF extension
-        imageFormat = 'png';
-        console.log("GIF not supported - outputting as PNG (but keeping original filename)");
-      } else {
-        imageFormat = metadata.format;
-      }
+    return img.metadata()
+      .then(metadata => {
+        if(metadata.format === 'gif') {
+          // GIF is not a Sharp supported output format, so
+          // we have to kinda cheat. Set the output format and the mimeType
+          // to PNG, but keep the actual filename with the GIF extension
+          imageFormat = 'png';
+          console.log("GIF not supported - outputting as PNG (but keeping original filename)");
+        } else {
+          imageFormat = metadata.format;
+        }
 
-      // JPEGs have additional settings for quality
-      if (imageFormat === "jpeg" && jpegOptions) {
-        outputOptions = jpegOptions;
-        logger.log('info', 'output options', outputOptions);
-      }
+        // JPEGs have additional settings for quality
+        if (imageFormat === "jpeg" && jpegOptions) {
+          outputOptions = jpegOptions;
+          logger.log('info', 'output options', outputOptions);
+        }
 
-      return img.toFormat(imageFormat, outputOptions).toBuffer();
-    })
-    .then(data => {
-      logger.log('info', 'mime type', imageFormat);
-      return { data: data, mimeType: "image/" + imageFormat }
-    })
-    .catch(err => { logger.log('error', 'resizing error', err) });
-};
+        return img.toFormat(imageFormat, outputOptions).toBuffer();
+      })
+      .then(data => {
+        logger.log('info', 'mime type', imageFormat);
+        return { data: data, mimeType: "image/" + imageFormat }
+      })
+      .catch(err => { logger.log('error', 'resizing error', err) });
+  })
+}
 
 //
 // Some source files have either a default or explicitly incorrect
