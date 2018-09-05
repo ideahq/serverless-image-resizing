@@ -383,11 +383,14 @@ var Copy = function (path, context, callback, stage) {
 
         return Promise.resolve();
       })
-      .then(() => callback(null, {
-        statusCode: 301,
-        headers: { 'Location': `${URL}${dstKey}?new` },
-        body: null,
-      })
+      .then(function() {
+        callback(null, {
+                  statusCode: 301,
+                  // TODO use more restrictive CORS header?
+                  headers: { 'Location': `${URL}${dstKey}?new`, 'Content-Type': 'text/plain', 'Vary': 'Origin', 'Access-Control-Allow-Origin': '*' },
+                  body: null,
+              })
+          }
       )
     .catch(err => callback(err));
   };
